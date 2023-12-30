@@ -68,7 +68,7 @@ class TetrominoType(Enum):
     L = 3
     O = 4
     S = 5
-    _T = 6
+    T = 6
     Z = 7
 
 
