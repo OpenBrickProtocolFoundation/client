@@ -18,11 +18,11 @@ from _ctypes import POINTER
 from _ctypes import pointer
 
 
-class _Matrix(ctypes.Structure):
+class _ObpfMatrix(ctypes.Structure):
     pass
 
 
-class _Tetrion(ctypes.Structure):
+class _ObpfTetrion(ctypes.Structure):
     pass
 
 
@@ -91,24 +91,24 @@ def _load_library() -> ctypes.CDLL:
     lib = ctypes.windll.LoadLibrary(lib_path)
 
     # struct Tetrion* obpf_create_tetrion(void);
-    lib.obpf_create_tetrion.restype = POINTER(_Tetrion)
+    lib.obpf_create_tetrion.restype = POINTER(_ObpfTetrion)
 
     # bool obpf_tetrion_try_get_active_tetromino(struct Tetrion const* tetrion, struct ObpfTetromino* out_tetromino);
-    lib.obpf_tetrion_try_get_active_tetromino.argtypes = [POINTER(_Tetrion), POINTER(_ObpfTetromino)]
+    lib.obpf_tetrion_try_get_active_tetromino.argtypes = [POINTER(_ObpfTetrion), POINTER(_ObpfTetromino)]
     lib.obpf_tetrion_try_get_active_tetromino.restype = ctypes.c_bool
 
     # void obpf_tetrion_simulate_up_until(struct Tetrion* tetrion, uint64_t frame);
-    lib.obpf_tetrion_simulate_up_until.argtypes = [POINTER(_Tetrion), ctypes.c_uint64]
+    lib.obpf_tetrion_simulate_up_until.argtypes = [POINTER(_ObpfTetrion), ctypes.c_uint64]
 
     # void obpf_tetrion_enqueue_event(struct Tetrion* tetrion, ObpfEvent event);
-    lib.obpf_tetrion_enqueue_event.argtypes = [POINTER(_Tetrion), _ObpfEvent]
+    lib.obpf_tetrion_enqueue_event.argtypes = [POINTER(_ObpfTetrion), _ObpfEvent]
 
     # void obpf_destroy_tetrion(struct Tetrion const* tetrion);
-    lib.obpf_destroy_tetrion.argtypes = [POINTER(_Tetrion)]
+    lib.obpf_destroy_tetrion.argtypes = [POINTER(_ObpfTetrion)]
 
-    # struct Matrix const* obpf_tetrion_matrix(struct Tetrion const* tetrion);
-    lib.obpf_tetrion_matrix.argtypes = [POINTER(_Tetrion)]
-    lib.obpf_tetrion_matrix.restype = POINTER(_Matrix)
+    # struct ObpfMatrix const* obpf_tetrion_matrix(struct Tetrion const* tetrion);
+    lib.obpf_tetrion_matrix.argtypes = [POINTER(_ObpfTetrion)]
+    lib.obpf_tetrion_matrix.restype = POINTER(_ObpfMatrix)
 
     # uint8_t obpf_tetrion_width(void);
     lib.obpf_tetrion_width.restype = ctypes.c_uint8
@@ -117,7 +117,7 @@ def _load_library() -> ctypes.CDLL:
     lib.obpf_tetrion_height.restype = ctypes.c_uint8
 
     # ObpfTetrominoType obpf_matrix_get(struct Matrix const* matrix, ObpfVec2 position);
-    lib.obpf_matrix_get.argtypes = [POINTER(_Matrix), _ObpfVec2]
+    lib.obpf_matrix_get.argtypes = [POINTER(_ObpfMatrix), _ObpfVec2]
 
     return lib
 
