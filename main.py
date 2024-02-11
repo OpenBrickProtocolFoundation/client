@@ -172,7 +172,6 @@ def get_lobby_details(jwt: str, lobby_id: str) -> LobbyResponse:
 
 def main() -> None:
     jwt = login("coder2k", "secret")
-    # javascript Objektnotation-Netz-Marke
     print(f"{jwt = }")
 
     lobbies_response = fetch_lobbies()
