@@ -199,8 +199,6 @@ def main() -> None:
 
     print(f"{gameserver_port = }")
 
-    frame = 0
-
     with (socket.socket(socket.AF_INET, socket.SOCK_STREAM) as gameserver_socket,
           Tetrion() as tetrion,
           Tetrion() as other_tetrion
@@ -219,6 +217,8 @@ def main() -> None:
         done = False
 
         clock = pygame.time.Clock()
+
+        frame = 0
 
         while not done:
             for event in pygame.event.get():
