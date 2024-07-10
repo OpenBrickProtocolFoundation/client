@@ -39,6 +39,18 @@ class _ObpfLobby(ctypes.Structure):
     pass
 
 
+class _ObpfLobbyList(ctypes.Structure):
+    pass
+
+
+class _ObpfLobbyInfo(ctypes.Structure):
+    pass
+
+
+class _ObpfLobbyDetails(ctypes.Structure):
+    pass
+
+
 class _ObpfVec2(ctypes.Structure):
     _fields_ = [("x", ctypes.c_uint8),
                 ("y", ctypes.c_uint8)]
@@ -217,6 +229,200 @@ def _load_library() -> ctypes.CDLL:
     ]
     lib.obpf_lobby_connection_start_lobby.restype = ctypes.c_bool
 
+    # ObpfLobbyList const* obpf_get_lobby_list(ObpfLobbyServerConnection* lobby_server_connection);
+    lib.obpf_get_lobby_list.argtypes = [
+        ctypes.POINTER(_ObpfLobbyServerConnection),
+    ]
+    lib.obpf_get_lobby_list.restype = POINTER(_ObpfLobbyList)
+
+    # void obpf_free_lobby_list(struct ObpfLobbyList const* lobby_list);
+    lib.obpf_free_lobby_list.argtypes = [
+        ctypes.POINTER(_ObpfLobbyList),
+    ]
+
+    # size_t obpf_lobby_list_length(struct ObpfLobbyList const* lobby_list);
+    lib.obpf_lobby_list_length.argtypes = [
+        ctypes.POINTER(_ObpfLobbyList),
+    ]
+    lib.obpf_lobby_list_length.restype = ctypes.c_size_t
+
+    # struct ObpfLobbyInfo const* obpf_lobby_list_at(
+    #     struct ObpfLobbyList const* lobby_list,
+    #     size_t index
+    # );
+    lib.obpf_lobby_list_at.argtypes = [
+        ctypes.POINTER(_ObpfLobbyList),
+        ctypes.c_size_t,
+    ]
+    lib.obpf_lobby_list_at.restype = POINTER(_ObpfLobbyInfo)
+
+    # char const* obpf_lobby_info_id(struct ObpfLobbyInfo const* lobby_info);
+    lib.obpf_lobby_info_id.argtypes = [
+        ctypes.POINTER(_ObpfLobbyInfo),
+    ]
+    lib.obpf_lobby_info_id.restype = ctypes.c_char_p
+
+    # char const* obpf_lobby_info_name(
+    #     struct ObpfLobbyInfo const* lobby_info
+    # );
+    lib.obpf_lobby_info_name.argtypes = [
+        ctypes.POINTER(_ObpfLobbyInfo),
+    ]
+    lib.obpf_lobby_info_name.restype = ctypes.c_char_p
+
+    # uint16_t obpf_lobby_info_size(
+    #     struct ObpfLobbyInfo const* lobby_info
+    # );
+    lib.obpf_lobby_info_size.argtypes = [
+        ctypes.POINTER(_ObpfLobbyInfo),
+    ]
+    lib.obpf_lobby_info_size.restype = ctypes.c_uint16
+
+    # uint16_t obpf_lobby_info_num_players_in_lobby(
+    #     struct ObpfLobbyInfo const* lobby_info
+    # );
+    lib.obpf_lobby_info_num_players_in_lobby.argtypes = [
+        ctypes.POINTER(_ObpfLobbyInfo),
+    ]
+    lib.obpf_lobby_info_num_players_in_lobby.restype = ctypes.c_uint16
+
+    # char const* obpf_lobby_info_host_id(
+    #     struct ObpfLobbyInfo const* lobby_info
+    # );
+    lib.obpf_lobby_info_host_id.argtypes = [
+        ctypes.POINTER(_ObpfLobbyInfo),
+    ]
+    lib.obpf_lobby_info_host_id.restype = ctypes.c_char_p
+
+    # char const* obpf_lobby_info_host_name(
+    #     struct ObpfLobbyInfo const* lobby_info
+    # );
+    lib.obpf_lobby_info_host_name.argtypes = [
+        ctypes.POINTER(_ObpfLobbyInfo),
+    ]
+    lib.obpf_lobby_info_host_name.restype = ctypes.c_char_p
+
+    # struct ObpfLobby* obpf_lobby_connection_join(
+    #     struct ObpfLobbyServerConnection* lobby_server_connection,
+    #     struct ObpfLobbyInfo const* lobby_info,
+    #     struct ObpfLobbyUser const* lobby_user
+    # );
+    lib.obpf_lobby_connection_join.argtypes = [
+        ctypes.POINTER(_ObpfLobbyServerConnection),
+        ctypes.POINTER(_ObpfLobbyInfo),
+        ctypes.POINTER(_ObpfLobbyUser),
+    ]
+    lib.obpf_lobby_connection_join.restype = POINTER(_ObpfLobby)
+
+    # uint16_t obpf_lobby_set_ready(
+    #     struct ObpfLobbyServerConnection* lobby_server_connection,
+    #     struct ObpfLobbyUser const* lobby_user,
+    #     struct ObpfLobby* obpf_lobby
+    # );
+    lib.obpf_lobby_set_ready.argtypes = [
+        ctypes.POINTER(_ObpfLobbyServerConnection),
+        ctypes.POINTER(_ObpfLobbyUser),
+        ctypes.POINTER(_ObpfLobby),
+    ]
+    lib.obpf_lobby_set_ready.restype = ctypes.c_uint16
+
+    # struct ObpfLobbyDetails const* obpf_lobby_connection_get_lobby_details(
+    #     struct ObpfLobbyServerConnection* lobby_server_connection,
+    #     struct ObpfLobbyInfo const* lobby_info,
+    #     struct ObpfLobbyUser const* lobby_user
+    # );
+    lib.obpf_lobby_connection_get_lobby_details.argtypes = [
+        ctypes.POINTER(_ObpfLobbyServerConnection),
+        ctypes.POINTER(_ObpfLobbyInfo),
+        ctypes.POINTER(_ObpfLobbyUser),
+    ]
+    lib.obpf_lobby_connection_get_lobby_details.restype = POINTER(_ObpfLobbyDetails)
+
+    # void obpf_free_lobby_details(
+    #     struct ObpfLobbyDetails const* lobby_details
+    # );
+    lib.obpf_free_lobby_details.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+    ]
+
+    # char const * obpf_lobby_details_id(
+    #     struct ObpfLobbyDetails const* lobby_details
+    # );
+    lib.obpf_lobby_details_id.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+    ]
+    lib.obpf_lobby_details_id.restype = ctypes.c_char_p
+
+    # char const * obpf_lobby_details_name(
+    #     struct ObpfLobbyDetails const* lobby_details
+    # );
+    lib.obpf_lobby_details_name.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+    ]
+    lib.obpf_lobby_details_name.restype = ctypes.c_char_p
+
+    # uint16_t obpf_lobby_details_size(
+    #     struct ObpfLobbyDetails const* lobby_details
+    # );
+    lib.obpf_lobby_details_size.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+    ]
+    lib.obpf_lobby_details_size.restype = ctypes.c_uint16
+
+    # size_t obpf_lobby_details_num_clients(
+    #     struct ObpfLobbyDetails const* lobby_details
+    # );
+    lib.obpf_lobby_details_num_clients.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+    ]
+    lib.obpf_lobby_details_num_clients.restype = ctypes.c_size_t
+
+    # char const * obpf_lobby_details_client_id(
+    #     struct ObpfLobbyDetails const* lobby_details,
+    #     size_t index
+    # );
+    lib.obpf_lobby_details_client_id.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+        ctypes.c_size_t,
+    ]
+    lib.obpf_lobby_details_client_id.restype = ctypes.c_char_p
+
+    # char const * obpf_lobby_details_client_name(
+    #     struct ObpfLobbyDetails const* lobby_details,
+    #     size_t index
+    # );
+    lib.obpf_lobby_details_client_name.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+        ctypes.c_size_t,
+    ]
+    lib.obpf_lobby_details_client_name.restype = ctypes.c_char_p
+
+    # bool obpf_lobby_details_client_is_ready(
+    #     struct ObpfLobbyDetails const* lobby_details,
+    #     size_t index
+    # );
+    lib.obpf_lobby_details_client_is_ready.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+        ctypes.c_size_t,
+    ]
+    lib.obpf_lobby_details_client_is_ready.restype = ctypes.c_bool
+
+    # char const * obpf_lobby_details_host_id(
+    #     struct ObpfLobbyDetails const* lobby_details
+    # );
+    lib.obpf_lobby_details_host_id.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+    ]
+    lib.obpf_lobby_details_host_id.restype = ctypes.c_char_p
+
+    # char const * obpf_lobby_details_host_name(
+    #     struct ObpfLobbyDetails const* lobby_details
+    # );
+    lib.obpf_lobby_details_host_name.argtypes = [
+        ctypes.POINTER(_ObpfLobbyDetails),
+    ]
+    lib.obpf_lobby_details_host_name.restype = ctypes.c_char_p
+
     return lib
 
 
@@ -257,6 +463,98 @@ def _lobby_connection_start_lobby(connection: Any, user: Any, lobby: Any) -> Opt
     port = ctypes.c_uint16()
     success = bool(_LIB.obpf_lobby_connection_start_lobby(connection, user, lobby, pointer(port)))
     return port.value if success else None
+
+
+def _get_lobby_list(connection: Any) -> Any:
+    return _LIB.obpf_get_lobby_list(connection)
+
+
+def _free_lobby_list(lobby_list: Any) -> None:
+    _LIB.obpf_free_lobby_list(lobby_list)
+
+
+def _lobby_list_length(lobby_list: Any) -> int:
+    return int(_LIB.obpf_lobby_list_length(lobby_list))
+
+
+def _lobby_list_at(lobby_list: Any, index: int) -> Any:
+    return _LIB.obpf_lobby_list_at(lobby_list, index)
+
+
+def _lobby_info_id(lobby_info: Any) -> str:
+    return _LIB.obpf_lobby_info_id(lobby_info)
+
+
+def _lobby_info_name(lobby_info: Any) -> str:
+    return _LIB.obpf_lobby_info_name(lobby_info)
+
+
+def _lobby_info_size(lobby_info: Any) -> int:
+    return _LIB.obpf_lobby_info_size(lobby_info)
+
+
+def _lobby_info_num_players_in_lobby(lobby_info: Any) -> int:
+    return _LIB.obpf_lobby_info_num_players_in_lobby(lobby_info)
+
+
+def _lobby_info_host_id(lobby_info: Any) -> str:
+    return _LIB.obpf_lobby_info_host_id(lobby_info)
+
+
+def _lobby_info_host_name(lobby_info: Any) -> str:
+    return _LIB.obpf_lobby_info_host_name(lobby_info)
+
+
+def _lobby_connection_join(connection: Any, lobby_info: Any, lobby_user: Any) -> Any:
+    return _LIB.obpf_lobby_connection_join(connection, lobby_info, lobby_user)
+
+
+def _lobby_set_ready(connection: Any, lobby_user: Any, lobby: Any) -> int:
+    return _LIB.obpf_lobby_set_ready(connection, lobby_user, lobby)
+
+
+def _lobby_connection_get_lobby_details(connection: Any, lobby_info: Any, lobby_user: Any) -> Any:
+    return _LIB.obpf_lobby_connection_get_lobby_details(connection, lobby_info, lobby_user)
+
+
+def _free_lobby_details(lobby_details: Any) -> Any:
+    return _LIB.obpf_free_lobby_details(lobby_details)
+
+
+def _lobby_details_id(lobby_details: Any) -> str:
+    return _LIB.obpf_lobby_details_id(lobby_details)
+
+
+def _lobby_details_name(lobby_details: Any) -> str:
+    return _LIB.obpf_lobby_details_name(lobby_details)
+
+
+def _lobby_details_size(lobby_details: Any) -> int:
+    return _LIB.obpf_lobby_details_size(lobby_details)
+
+
+def _lobby_details_num_clients(lobby_details: Any) -> int:
+    return _LIB.obpf_lobby_details_num_clients(lobby_details)
+
+
+def _lobby_details_client_id(lobby_details: Any, index: int) -> str:
+    return _LIB.obpf_lobby_details_client_id(lobby_details, index)
+
+
+def _lobby_details_client_name(lobby_details: Any, index: int) -> str:
+    return _LIB.obpf_lobby_details_client_name(lobby_details, index)
+
+
+def _lobby_details_client_is_ready(lobby_details: Any, index: int) -> bool:
+    return _LIB.obpf_lobby_details_client_is_ready(lobby_details, index)
+
+
+def _lobby_details_host_id(lobby_details: Any) -> str:
+    return _LIB.obpf_lobby_details_host_id(lobby_details)
+
+
+def _lobby_details_host_name(lobby_details: Any) -> str:
+    return _LIB.obpf_lobby_details_host_name(lobby_details)
 
 
 def _lobby_unregister_user(connection: Any, user: Any) -> None:
@@ -354,6 +652,7 @@ class User:
 
     @property
     def handle(self) -> Any:
+        assert self._handle is not None
         return self._handle
 
     def __enter__(self) -> Self:
@@ -375,7 +674,81 @@ class Lobby:
 
     @property
     def handle(self) -> Any:
+        assert self._handle is not None
         return self._handle
+
+
+@final
+class LobbyInfo:
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
+
+    @property
+    def handle(self) -> Any:
+        return self._handle
+
+    @property
+    def id(self) -> str:
+        return _lobby_info_id(self._handle)
+
+    @property
+    def name(self) -> str:
+        return _lobby_info_name(self._handle)
+
+    @property
+    def size(self) -> int:
+        return _lobby_info_size(self._handle)
+
+    @property
+    def num_players_in_lobby(self) -> int:
+        return _lobby_info_num_players_in_lobby(self._handle)
+
+    @property
+    def host_id(self) -> str:
+        return _lobby_info_host_id(self._handle)
+
+    @property
+    def host_name(self) -> str:
+        return _lobby_info_host_name(self._handle)
+
+
+@final
+class ClientPlayerInfo(NamedTuple):
+    id: str
+    name: str
+    is_ready: bool
+
+
+@final
+class LobbyDetails(NamedTuple):
+    id: str
+    name: str
+    size: int
+    client_infos: list[ClientPlayerInfo]
+    host_id: str
+    host_name: str
+
+
+@final
+class LobbyList:
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
+
+    @property
+    def lobbies(self) -> list[LobbyInfo]:
+        length = _lobby_list_length(self._handle)
+        return [LobbyInfo(_lobby_list_at(self._handle, index)) for index in range(length)]
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: types.TracebackType) -> bool:
+        self.__del__()
+        return exc_type is None
+
+    def __del__(self) -> None:
+        _free_lobby_list(self._handle)
+        self._handle = None
 
 
 @final
@@ -398,10 +771,38 @@ class LobbyServerConnection:
     def destroy_lobby(self, user: User, lobby: Lobby) -> None:
         _lobby_connection_destroy_lobby(self._connection, user.handle, lobby.handle)
 
-    def start_lobby(self, user: User, lobby: Lobby) -> int:
-        result = _lobby_connection_start_lobby(self._connection, user.handle, lobby.handle)
-        assert isinstance(result, int)
+    def start_lobby(self, user: User, lobby: Lobby) -> Optional[int]:
+        return _lobby_connection_start_lobby(self._connection, user.handle, lobby.handle)
+
+    def get_lobby_list(self) -> LobbyList:
+        return LobbyList(_get_lobby_list(self._connection))
+
+    def get_lobby_details(self, lobby_info: LobbyInfo, user: User) -> LobbyDetails:
+        lobby_details = _lobby_connection_get_lobby_details(self._connection, lobby_info.handle, user.handle)
+        client_infos = [
+            ClientPlayerInfo(
+                _lobby_details_client_id(lobby_details, index),
+                _lobby_details_client_name(lobby_details, index),
+                _lobby_details_client_is_ready(lobby_details, index),
+            )
+            for index in range(_lobby_details_num_clients(lobby_details))
+        ]
+        result = LobbyDetails(
+            _lobby_details_id(lobby_details),
+            _lobby_details_name(lobby_details),
+            _lobby_details_size(lobby_details),
+            client_infos,
+            _lobby_details_host_id(lobby_details),
+            _lobby_details_host_name(lobby_details),
+        )
+        _free_lobby_details(lobby_details)
         return result
+
+    def join(self, lobby_info: LobbyInfo, user: User) -> Lobby:
+        return Lobby(_lobby_connection_join(self._connection, lobby_info.handle, user.handle))
+
+    def set_ready(self, lobby: Lobby, user: User) -> int:
+        return _lobby_set_ready(self._connection, user.handle, lobby.handle)
 
     def __enter__(self) -> Self:
         return self
