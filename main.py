@@ -4,6 +4,7 @@ import struct
 import sys
 import threading
 import time
+from enum import auto
 from enum import Enum
 from typing import NamedTuple
 from typing import Optional
@@ -19,6 +20,14 @@ from tetrion import LobbyServerConnection
 from tetrion import Tetrion
 from tetrion import Tetromino
 from tetrion import Vec2
+
+
+class Mode(Enum):
+    ONE_PLAYER = auto()
+    TWO_PLAYERS = auto()
+
+
+MODE = Mode.ONE_PLAYER
 
 COLORS = [
     (0, 0, 0),
@@ -185,10 +194,11 @@ def main() -> None:
                     with connection.get_lobby_list() as lobby_list:
                         lobby_info = lobby_list.lobbies[0]
                         lobby_details = connection.get_lobby_details(lobby_info, user)
-                    # if len(lobby_details.client_infos) == 0:
-                    #     logging.debug("second player not present yet...")
-                    #     time.sleep(1.0)
-                    #     continue
+                    if MODE == Mode.TWO_PLAYERS:
+                        if len(lobby_details.client_infos) == 0:
+                            logging.debug("second player not present yet...")
+                            time.sleep(1.0)
+                            continue
                     gameserver_port = connection.start_lobby(user, lobby)
                     if gameserver_port is not None:
                         logging.debug("game started")
@@ -260,11 +270,13 @@ def main() -> None:
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.PRESSED, frame=simulation_step)
+                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.PRESSED,
+                                                        frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.ROTATE_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.PRESSED, frame=simulation_step)
+                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.PRESSED,
+                                                        frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.DROP:
@@ -285,11 +297,13 @@ def main() -> None:
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED, frame=simulation_step)
+                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED,
+                                                        frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.ROTATE_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED, frame=simulation_step)
+                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED,
+                                                        frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.DROP:
@@ -305,8 +319,10 @@ def main() -> None:
                             assert isinstance(broadcast_message, BroadcastMessage)
                             assert len(broadcast_message.events_per_client) >= 1
                             other_client_frame = broadcast_message.frame
-                            # for input_event in broadcast_message.events_per_client[1 if client_id == 0 else 0].events:
-                            #     other_tetrion.enqueue_event(input_event)
+                            if MODE == Mode.TWO_PLAYERS:
+                                for input_event in broadcast_message.events_per_client[
+                                    1 if client_id == 0 else 0].events:
+                                    other_tetrion.enqueue_event(input_event)
 
                         if simulation_step > 30 and other_client_frame is not None:
                             other_tetrion.simulate_up_until(min(simulation_step - 30, other_client_frame))
@@ -320,7 +336,8 @@ def main() -> None:
                         fps = int(clock.get_fps())
 
                         game_font = pygame.font.Font(None, 30)
-                        fps_counter = game_font.render(f"{fps} FPS, simulation step {simulation_step}", True, (255, 255, 255))
+                        fps_counter = game_font.render(f"{fps} FPS, simulation step {simulation_step}", True,
+                                                       (255, 255, 255))
 
                         screen.blit(fps_counter, (5, 5 + tetrion.height * RECT_SIZE))
 
