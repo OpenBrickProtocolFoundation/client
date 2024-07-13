@@ -11,6 +11,7 @@ from typing import Optional
 import pygame
 import select
 
+import controls
 from tetrion import Event
 from tetrion import EventType
 from tetrion import Key
@@ -244,54 +245,54 @@ def main() -> None:
                             if event.type == pygame.QUIT:
                                 done = True
                             elif event.type == pygame.KEYDOWN:
-                                if event.key == pygame.K_ESCAPE:
+                                if event.key == controls.QUIT:
                                     done = True
-                                elif event.key == pygame.K_a:
+                                elif event.key == controls.LEFT:
                                     input_event = Event(key=Key.LEFT, type=EventType.PRESSED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_d:
+                                elif event.key == controls.RIGHT:
                                     input_event = Event(key=Key.RIGHT, type=EventType.PRESSED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_s:
+                                elif event.key == controls.DOWN:
                                     input_event = Event(key=Key.DOWN, type=EventType.PRESSED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_RIGHT:
+                                elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
                                     input_event = Event(key=Key.ROTATE_CCW, type=EventType.PRESSED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_LEFT:
+                                elif event.key == controls.ROTATE_CLOCKWISE:
                                     input_event = Event(key=Key.ROTATE_CW, type=EventType.PRESSED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_w:
+                                elif event.key == controls.DROP:
                                     input_event = Event(key=Key.DROP, type=EventType.PRESSED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                             elif event.type == pygame.KEYUP:
-                                if event.key == pygame.K_a:
+                                if event.key == controls.LEFT:
                                     input_event = Event(key=Key.LEFT, type=EventType.RELEASED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_d:
+                                elif event.key == controls.RIGHT:
                                     input_event = Event(key=Key.RIGHT, type=EventType.RELEASED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_s:
+                                elif event.key == controls.DOWN:
                                     input_event = Event(key=Key.DOWN, type=EventType.RELEASED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_RIGHT:
+                                elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
                                     input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_LEFT:
+                                elif event.key == controls.ROTATE_CLOCKWISE:
                                     input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
-                                elif event.key == pygame.K_w:
+                                elif event.key == controls.DROP:
                                     input_event = Event(key=Key.DROP, type=EventType.RELEASED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
