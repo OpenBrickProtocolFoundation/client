@@ -230,7 +230,7 @@ def main() -> None:
                     size = (RECT_SIZE * tetrion.width * 2, (RECT_SIZE + 2) * tetrion.height)
                     screen = pygame.display.set_mode(size)
 
-                    frame = 0
+                    simulation_step = 0
 
                     clock = pygame.time.Clock()
 
@@ -248,57 +248,57 @@ def main() -> None:
                                 if event.key == controls.QUIT:
                                     done = True
                                 elif event.key == controls.LEFT:
-                                    input_event = Event(key=Key.LEFT, type=EventType.PRESSED, frame=frame)
+                                    input_event = Event(key=Key.LEFT, type=EventType.PRESSED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.RIGHT:
-                                    input_event = Event(key=Key.RIGHT, type=EventType.PRESSED, frame=frame)
+                                    input_event = Event(key=Key.RIGHT, type=EventType.PRESSED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.DOWN:
-                                    input_event = Event(key=Key.DOWN, type=EventType.PRESSED, frame=frame)
+                                    input_event = Event(key=Key.DOWN, type=EventType.PRESSED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.PRESSED, frame=frame)
+                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.PRESSED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.ROTATE_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.PRESSED, frame=frame)
+                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.PRESSED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.DROP:
-                                    input_event = Event(key=Key.DROP, type=EventType.PRESSED, frame=frame)
+                                    input_event = Event(key=Key.DROP, type=EventType.PRESSED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                             elif event.type == pygame.KEYUP:
                                 if event.key == controls.LEFT:
-                                    input_event = Event(key=Key.LEFT, type=EventType.RELEASED, frame=frame)
+                                    input_event = Event(key=Key.LEFT, type=EventType.RELEASED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.RIGHT:
-                                    input_event = Event(key=Key.RIGHT, type=EventType.RELEASED, frame=frame)
+                                    input_event = Event(key=Key.RIGHT, type=EventType.RELEASED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.DOWN:
-                                    input_event = Event(key=Key.DOWN, type=EventType.RELEASED, frame=frame)
+                                    input_event = Event(key=Key.DOWN, type=EventType.RELEASED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED, frame=frame)
+                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.ROTATE_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED, frame=frame)
+                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
                                 elif event.key == controls.DROP:
-                                    input_event = Event(key=Key.DROP, type=EventType.RELEASED, frame=frame)
+                                    input_event = Event(key=Key.DROP, type=EventType.RELEASED, frame=simulation_step)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
 
-                        if frame > 0:
-                            tetrion.simulate_up_until(frame - 1)
+                        if simulation_step > 0:
+                            tetrion.simulate_up_until(simulation_step - 1)
 
                         while len(message_queue) > 0:
                             broadcast_message = message_queue.pop(0)
@@ -308,8 +308,8 @@ def main() -> None:
                             # for input_event in broadcast_message.events_per_client[1 if client_id == 0 else 0].events:
                             #     other_tetrion.enqueue_event(input_event)
 
-                        if frame > 30 and other_client_frame is not None:
-                            other_tetrion.simulate_up_until(min(frame - 30, other_client_frame))
+                        if simulation_step > 30 and other_client_frame is not None:
+                            other_tetrion.simulate_up_until(min(simulation_step - 30, other_client_frame))
 
                         screen.fill((100, 100, 100))
 
@@ -320,7 +320,7 @@ def main() -> None:
                         fps = int(clock.get_fps())
 
                         game_font = pygame.font.Font(None, 30)
-                        fps_counter = game_font.render(f"{fps} FPS, frame {frame}", True, (255, 255, 255))
+                        fps_counter = game_font.render(f"{fps} FPS, simulation step {simulation_step}", True, (255, 255, 255))
 
                         screen.blit(fps_counter, (5, 5 + tetrion.height * RECT_SIZE))
 
@@ -329,11 +329,11 @@ def main() -> None:
                         elapsed = time.monotonic() - start_time
                         new_frame = int(elapsed / (1.0 / 60.0))
 
-                        while frame < new_frame - 1:
-                            if frame % 15 == 0:
-                                send_event_buffer(gameserver_socket, event_buffer, frame)
+                        while simulation_step < new_frame - 1:
+                            if simulation_step % 15 == 0:
+                                send_event_buffer(gameserver_socket, event_buffer, simulation_step)
                                 event_buffer.clear()
-                            frame += 1
+                            simulation_step += 1
 
                 print("main loop ended")
 
