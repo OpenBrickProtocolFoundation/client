@@ -127,6 +127,10 @@ def _load_library() -> ctypes.CDLL:
     lib.obpf_tetrion_try_get_active_tetromino.argtypes = [POINTER(_ObpfTetrion), POINTER(_ObpfTetromino)]
     lib.obpf_tetrion_try_get_active_tetromino.restype = ctypes.c_bool
 
+    # bool obpf_tetrion_try_get_ghost_tetromino(struct Tetrion const* tetrion, struct ObpfTetromino* out_tetromino);
+    lib.obpf_tetrion_try_get_ghost_tetromino.argtypes = [POINTER(_ObpfTetrion), POINTER(_ObpfTetromino)]
+    lib.obpf_tetrion_try_get_ghost_tetromino.restype = ctypes.c_bool
+
     # void obpf_tetrion_simulate_up_until(struct Tetrion* tetrion, uint64_t frame);
     lib.obpf_tetrion_simulate_up_until.argtypes = [POINTER(_ObpfTetrion), ctypes.c_uint64]
 
@@ -574,6 +578,15 @@ def _tetrion_try_get_active_tetromino(tetrion: Any) -> Optional[Tetromino]:
     return Tetromino((pos0, pos1, pos2, pos3), TetrominoType(tetromino.type_))
 
 
+def _tetrion_try_get_ghost_tetromino(tetrion: Any) -> Optional[Tetromino]:
+    tetromino = _ObpfTetromino()
+    success = _LIB.obpf_tetrion_try_get_ghost_tetromino(tetrion, pointer(tetromino))
+    if not success:
+        return None
+    pos0, pos1, pos2, pos3 = [Vec2(position.x, position.y) for position in tetromino.mino_positions]
+    return Tetromino((pos0, pos1, pos2, pos3), TetrominoType(tetromino.type_))
+
+
 def _tetrion_simulate_up_until(tetrion: Any, frame: int) -> None:
     _LIB.obpf_tetrion_simulate_up_until(tetrion, ctypes.c_uint64(frame))
 
@@ -609,6 +622,9 @@ class Tetrion:
 
     def try_get_active_tetromino(self) -> Optional[Tetromino]:
         return _tetrion_try_get_active_tetromino(self._tetrion)
+
+    def try_get_ghost_tetromino(self) -> Optional[Tetromino]:
+        return _tetrion_try_get_ghost_tetromino(self._tetrion)
 
     def simulate_up_until(self, frame: int) -> None:
         _tetrion_simulate_up_until(self._tetrion, frame)

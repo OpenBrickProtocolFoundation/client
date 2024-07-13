@@ -16,6 +16,7 @@ from tetrion import EventType
 from tetrion import Key
 from tetrion import LobbyServerConnection
 from tetrion import Tetrion
+from tetrion import Tetromino
 from tetrion import Vec2
 
 COLORS = [
@@ -27,6 +28,17 @@ COLORS = [
     (0, 240, 0),
     (160, 0, 240),
     (240, 0, 0),
+]
+
+GHOST_COLORS = [
+    (0, 0, 0),
+    (0, 80, 80),
+    (0, 0, 80),
+    (80, 50, 0),
+    (80, 80, 0),
+    (0, 80, 0),
+    (50, 0, 80),
+    (80, 0, 0),
 ]
 
 RECT_SIZE = 30
@@ -50,12 +62,19 @@ def render_tetrion(screen: pygame.Surface, position: Vec2, tetrion: Tetrion) -> 
             pygame.draw.rect(screen, COLORS[mino.value],
                              pygame.Rect(position.x + x * RECT_SIZE, position.y + y * RECT_SIZE, RECT_SIZE, RECT_SIZE))
 
+    def render_tetromino(tetromino: Tetromino, colors: list[tuple[int, int, int]]) -> None:
+        for pos in tetromino.mino_positions:
+            x, y = pos.x, pos.y
+            pygame.draw.rect(screen, colors[tetromino.type.value],
+                             pygame.Rect(position.x + x * RECT_SIZE, position.y + y * RECT_SIZE, RECT_SIZE, RECT_SIZE))
+
+    ghost_tetromino = tetrion.try_get_ghost_tetromino()
+    if ghost_tetromino is not None:
+        render_tetromino(ghost_tetromino, GHOST_COLORS)
+
     active_tetromino = tetrion.try_get_active_tetromino()
     if active_tetromino is not None:
-        for pos in active_tetromino.mino_positions:
-            x, y = pos.x, pos.y
-            pygame.draw.rect(screen, COLORS[active_tetromino.type.value],
-                             pygame.Rect(position.x + x * RECT_SIZE, position.y + y * RECT_SIZE, RECT_SIZE, RECT_SIZE))
+        render_tetromino(active_tetromino, COLORS)
 
 
 class MessageType(Enum):
@@ -165,10 +184,10 @@ def main() -> None:
                     with connection.get_lobby_list() as lobby_list:
                         lobby_info = lobby_list.lobbies[0]
                         lobby_details = connection.get_lobby_details(lobby_info, user)
-                    if len(lobby_details.client_infos) == 0:
-                        logging.debug("second player not present yet...")
-                        time.sleep(1.0)
-                        continue
+                    # if len(lobby_details.client_infos) == 0:
+                    #     logging.debug("second player not present yet...")
+                    #     time.sleep(1.0)
+                    #     continue
                     gameserver_port = connection.start_lobby(user, lobby)
                     if gameserver_port is not None:
                         logging.debug("game started")
@@ -251,6 +270,31 @@ def main() -> None:
                                     input_event = Event(key=Key.DROP, type=EventType.PRESSED, frame=frame)
                                     tetrion.enqueue_event(input_event)
                                     event_buffer.append(input_event)
+                            elif event.type == pygame.KEYUP:
+                                if event.key == pygame.K_a:
+                                    input_event = Event(key=Key.LEFT, type=EventType.RELEASED, frame=frame)
+                                    tetrion.enqueue_event(input_event)
+                                    event_buffer.append(input_event)
+                                elif event.key == pygame.K_d:
+                                    input_event = Event(key=Key.RIGHT, type=EventType.RELEASED, frame=frame)
+                                    tetrion.enqueue_event(input_event)
+                                    event_buffer.append(input_event)
+                                elif event.key == pygame.K_s:
+                                    input_event = Event(key=Key.DOWN, type=EventType.RELEASED, frame=frame)
+                                    tetrion.enqueue_event(input_event)
+                                    event_buffer.append(input_event)
+                                elif event.key == pygame.K_RIGHT:
+                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED, frame=frame)
+                                    tetrion.enqueue_event(input_event)
+                                    event_buffer.append(input_event)
+                                elif event.key == pygame.K_LEFT:
+                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED, frame=frame)
+                                    tetrion.enqueue_event(input_event)
+                                    event_buffer.append(input_event)
+                                elif event.key == pygame.K_w:
+                                    input_event = Event(key=Key.DROP, type=EventType.RELEASED, frame=frame)
+                                    tetrion.enqueue_event(input_event)
+                                    event_buffer.append(input_event)
 
                         if frame > 0:
                             tetrion.simulate_up_until(frame - 1)
@@ -260,8 +304,8 @@ def main() -> None:
                             assert isinstance(broadcast_message, BroadcastMessage)
                             assert len(broadcast_message.events_per_client) >= 1
                             other_client_frame = broadcast_message.frame
-                            for input_event in broadcast_message.events_per_client[1 if client_id == 0 else 0].events:
-                                other_tetrion.enqueue_event(input_event)
+                            # for input_event in broadcast_message.events_per_client[1 if client_id == 0 else 0].events:
+                            #     other_tetrion.enqueue_event(input_event)
 
                         if frame > 30 and other_client_frame is not None:
                             other_tetrion.simulate_up_until(min(frame - 30, other_client_frame))
