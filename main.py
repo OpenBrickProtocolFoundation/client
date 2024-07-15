@@ -1,9 +1,11 @@
+import ctypes
 import logging
 import socket
 import struct
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from enum import auto
 from enum import Enum
 from typing import NamedTuple
@@ -65,7 +67,19 @@ def send_event_buffer(target: socket.socket, events: list[Event], frame: int) ->
     target.send(data)
 
 
-def render_tetrion(screen: pygame.Surface, position: Vec2, tetrion: Tetrion) -> None:
+@dataclass
+class LineClearAnimation:
+    lines: list[int]
+    delay: int
+    counter: int
+
+
+def render_tetrion(
+        screen: pygame.Surface,
+        position: Vec2,
+        tetrion: Tetrion,
+        current_animation: Optional[LineClearAnimation],
+) -> None:
     matrix = tetrion.matrix()
     for y, row in enumerate(matrix.rows):
         for x, mino in enumerate(row):
@@ -85,6 +99,15 @@ def render_tetrion(screen: pygame.Surface, position: Vec2, tetrion: Tetrion) -> 
     active_tetromino = tetrion.try_get_active_tetromino()
     if active_tetromino is not None:
         render_tetromino(active_tetromino, COLORS)
+
+    if current_animation is not None:
+        brightness = int(255 * current_animation.counter / current_animation.delay)
+        for line in current_animation.lines:
+            pygame.draw.rect(
+                screen,
+                (brightness, brightness, brightness),
+                pygame.Rect(position.x, position.y + line * RECT_SIZE, tetrion.width * RECT_SIZE, RECT_SIZE)
+            )
 
 
 class MessageType(Enum):
@@ -177,8 +200,25 @@ def keep_receiving(server_socket: socket.socket) -> None:
 
 _LOBBY_URL = "http://127.0.0.1:5000"
 
+current_animation: Optional[LineClearAnimation] = None
+
+
+@ctypes.CFUNCTYPE(None, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint64)
+def on_lines_cleared_callback(count: int, first: int, second: int, third: int, fourth: int, delay: int) -> None:
+    lines_cleared = [first]
+    if count > 1:
+        lines_cleared.append(second)
+    if count > 2:
+        lines_cleared.append(third)
+    if count > 3:
+        lines_cleared.append(fourth)
+    global current_animation
+    current_animation = LineClearAnimation(lines_cleared, delay, delay)
+    print(f"lines cleared: {lines_cleared}, delay: {delay}")
+
 
 def main() -> None:
+    global current_animation
     with LobbyServerConnection("127.0.0.1", 5000) as connection:
         with connection.get_lobby_list() as lobby_list:
             num_lobbies = len(lobby_list.lobbies)
@@ -236,6 +276,7 @@ def main() -> None:
                 seed = game_start_message.random_seed
 
                 with Tetrion(seed) as tetrion, Tetrion(seed) as other_tetrion:
+                    tetrion.set_lines_cleared_callback(on_lines_cleared_callback)
                     pygame.init()
                     size = (RECT_SIZE * tetrion.width * 2, (RECT_SIZE + 2) * tetrion.height)
                     screen = pygame.display.set_mode(size)
@@ -329,8 +370,8 @@ def main() -> None:
 
                         screen.fill((100, 100, 100))
 
-                        render_tetrion(screen, Vec2(0, 0), tetrion)
-                        render_tetrion(screen, Vec2(tetrion.width * RECT_SIZE, 0), other_tetrion)
+                        render_tetrion(screen, Vec2(0, 0), tetrion, current_animation)
+                        render_tetrion(screen, Vec2(tetrion.width * RECT_SIZE, 0), other_tetrion, None)
 
                         clock.tick()
                         fps = int(clock.get_fps())
@@ -350,6 +391,11 @@ def main() -> None:
                             if simulation_step % 15 == 0:
                                 send_event_buffer(gameserver_socket, event_buffer, simulation_step)
                                 event_buffer.clear()
+                            if current_animation is not None:
+                                current_animation.counter -= 1
+                                if current_animation.counter <= 0:
+                                    current_animation = None
+                                    print("line clear animation ended")
                             simulation_step += 1
 
                 print("main loop ended")

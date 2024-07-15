@@ -123,6 +123,15 @@ def _load_library() -> ctypes.CDLL:
     lib.obpf_create_tetrion.argtypes = [ctypes.c_uint64]
     lib.obpf_create_tetrion.restype = POINTER(_ObpfTetrion)
 
+    # void obpf_tetrion_set_lines_cleared_callback(
+    #         struct ObpfTetrion* tetrion,
+    #         void(*callback)(uint8_t count, uint8_t first, uint8_t second, uint8_t third, uint8_t fourth, uint64_t delay)
+    #     );
+    lib.obpf_tetrion_set_lines_cleared_callback.argtypes = [POINTER(_ObpfTetrion),
+                                                            ctypes.CFUNCTYPE(None, ctypes.c_uint8, ctypes.c_uint8,
+                                                                             ctypes.c_uint8, ctypes.c_uint8,
+                                                                             ctypes.c_uint8, ctypes.c_uint64)]
+
     # bool obpf_tetrion_try_get_active_tetromino(struct Tetrion const* tetrion, struct ObpfTetromino* out_tetromino);
     lib.obpf_tetrion_try_get_active_tetromino.argtypes = [POINTER(_ObpfTetrion), POINTER(_ObpfTetromino)]
     lib.obpf_tetrion_try_get_active_tetromino.restype = ctypes.c_bool
@@ -569,6 +578,10 @@ def _create_tetrion(seed: int) -> Any:
     return _LIB.obpf_create_tetrion(seed)
 
 
+def _tetrion_set_lines_cleared_callback(tetrion: Any, callback: Any) -> None:
+    _LIB.obpf_tetrion_set_lines_cleared_callback(tetrion, callback)
+
+
 def _tetrion_try_get_active_tetromino(tetrion: Any) -> Optional[Tetromino]:
     tetromino = _ObpfTetromino()
     success = _LIB.obpf_tetrion_try_get_active_tetromino(tetrion, pointer(tetromino))
@@ -619,6 +632,12 @@ def _matrix_get(matrix: Any, position: Vec2) -> TetrominoType:
 class Tetrion:
     def __init__(self, seed: int) -> None:
         self._tetrion = _create_tetrion(seed)
+
+    def set_lines_cleared_callback(
+            self,
+            callback: Any,
+    ) -> None:
+        _tetrion_set_lines_cleared_callback(self._tetrion, callback)
 
     def try_get_active_tetromino(self) -> Optional[Tetromino]:
         return _tetrion_try_get_active_tetromino(self._tetrion)
