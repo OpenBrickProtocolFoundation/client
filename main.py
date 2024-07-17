@@ -14,11 +14,13 @@ import select
 
 import controls
 from synchronized import Synchronized
+from tetrion import _tetromino_get_mino_positions
 from tetrion import Event
 from tetrion import EventType
 from tetrion import Key
 from tetrion import Lobby
 from tetrion import LobbyServerConnection
+from tetrion import Rotation
 from tetrion import Tetrion
 from tetrion import Tetromino
 from tetrion import TetrominoType
@@ -92,15 +94,34 @@ def render_tetrion(
 
     def render_tetromino(
             tetromino: Tetromino,
+            offset: Vec2,
             fill_colors: list[tuple[int, int, int]],
             border_colors: list[tuple[int, int, int]],
     ) -> None:
         for pos in tetromino.mino_positions:
             render_mino(
-                pos.x,
-                pos.y,
+                pos.x + offset.x,
+                pos.y + offset.y,
                 fill_colors[tetromino.type.value],
                 border_colors[tetromino.type.value],
+            )
+
+    # render gray area left of the grid for the hold piece (6 columns wide)
+    pygame.draw.rect(
+        screen,
+        (64, 64, 64),
+        pygame.Rect(position.x, position.y, RECT_SIZE * 6, tetrion.height * RECT_SIZE)
+    )
+
+    hold_piece = tetrion.get_hold_piece()
+    if hold_piece != TetrominoType.EMPTY:
+        mino_positions = _tetromino_get_mino_positions(hold_piece, Rotation.NORTH)
+        for pos in mino_positions:
+            render_mino(
+                pos.x + 1,
+                pos.y + 1,
+                COLORS[hold_piece.value],
+                GHOST_COLORS[hold_piece.value],
             )
 
     # render grid
@@ -109,7 +130,7 @@ def render_tetrion(
             pygame.draw.rect(
                 screen,
                 (64, 64, 64),
-                pygame.Rect(position.x + x * RECT_SIZE, position.y + y * RECT_SIZE, RECT_SIZE, RECT_SIZE),
+                pygame.Rect(position.x + (x + 6) * RECT_SIZE, position.y + y * RECT_SIZE, RECT_SIZE, RECT_SIZE),
                 1
             )
 
@@ -117,8 +138,21 @@ def render_tetrion(
     pygame.draw.rect(
         screen,
         (64, 64, 64),
-        pygame.Rect(position.x + tetrion.width * RECT_SIZE, position.y, RECT_SIZE * 6, tetrion.height * RECT_SIZE)
+        pygame.Rect(position.x + (tetrion.width + 6) * RECT_SIZE - 1, position.y, RECT_SIZE * 6,
+                    tetrion.height * RECT_SIZE)
     )
+
+    # render preview pieces
+    preview_pieces = tetrion.get_preview_pieces()
+    for i, tetromino_type in enumerate(preview_pieces):
+        mino_positions = _tetromino_get_mino_positions(tetromino_type, Rotation.NORTH)
+        for pos in mino_positions:
+            render_mino(
+                tetrion.width + pos.x + 7,
+                pos.y + i * 3 + 1,
+                COLORS[tetromino_type.value],
+                GHOST_COLORS[tetromino_type.value],
+            )
 
     matrix = tetrion.matrix()
     for y, row in enumerate(matrix.rows):
@@ -126,7 +160,7 @@ def render_tetrion(
             if mino == TetrominoType.EMPTY:
                 continue
             render_mino(
-                x,
+                x + 6,
                 y,
                 COLORS[mino.value],
                 GHOST_COLORS[mino.value],
@@ -134,11 +168,11 @@ def render_tetrion(
 
     ghost_tetromino = tetrion.try_get_ghost_tetromino()
     if ghost_tetromino is not None:
-        render_tetromino(ghost_tetromino, GHOST_COLORS, GHOST_COLORS)
+        render_tetromino(ghost_tetromino, Vec2(6, 0), GHOST_COLORS, GHOST_COLORS)
 
     active_tetromino = tetrion.try_get_active_tetromino()
     if active_tetromino is not None:
-        render_tetromino(active_tetromino, COLORS, GHOST_COLORS)
+        render_tetromino(active_tetromino, Vec2(6, 0), COLORS, GHOST_COLORS)
 
     line_clear_delay_state = tetrion.get_line_clear_delay_state()
     if len(line_clear_delay_state.lines):
@@ -147,7 +181,12 @@ def render_tetrion(
             pygame.draw.rect(
                 screen,
                 (brightness, brightness, brightness),
-                pygame.Rect(position.x, position.y + line * RECT_SIZE, tetrion.width * RECT_SIZE, RECT_SIZE)
+                pygame.Rect(
+                    position.x + 6 * RECT_SIZE,
+                    position.y + line * RECT_SIZE,
+                    tetrion.width * RECT_SIZE,
+                    RECT_SIZE,
+                )
             )
 
 
@@ -312,7 +351,7 @@ def main() -> None:
 
             with Tetrion(seed) as tetrion, Tetrion(seed) as other_tetrion:
                 pygame.init()
-                size = (RECT_SIZE * (tetrion.width + 6) * 2, (RECT_SIZE + 2) * tetrion.height)
+                size = (RECT_SIZE * (tetrion.width + 12) * 2, (RECT_SIZE + 2) * tetrion.height)
                 screen = pygame.display.set_mode(size)
 
                 simulation_step = 0
@@ -363,6 +402,10 @@ def main() -> None:
                                 input_event = Event(key=Key.DROP, type=EventType.PRESSED, frame=simulation_step)
                                 tetrion.enqueue_event(input_event)
                                 event_buffer.append(input_event)
+                            elif event.key == controls.HOLD:
+                                input_event = Event(key=Key.HOLD, type=EventType.PRESSED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
                         elif event.type == pygame.KEYUP:
                             if event.key == controls.LEFT:
                                 input_event = Event(key=Key.LEFT, type=EventType.RELEASED, frame=simulation_step)
@@ -390,6 +433,10 @@ def main() -> None:
                                 input_event = Event(key=Key.DROP, type=EventType.RELEASED, frame=simulation_step)
                                 tetrion.enqueue_event(input_event)
                                 event_buffer.append(input_event)
+                            elif event.key == controls.HOLD:
+                                input_event = Event(key=Key.HOLD, type=EventType.RELEASED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
 
                     if simulation_step > 0:
                         tetrion.simulate_up_until(simulation_step - 1)
@@ -409,7 +456,7 @@ def main() -> None:
                     screen.fill((0, 0, 0))
 
                     render_tetrion(screen, Vec2(0, 0), tetrion)
-                    render_tetrion(screen, Vec2((tetrion.width + 6) * RECT_SIZE, 0), other_tetrion)
+                    render_tetrion(screen, Vec2((tetrion.width + 12) * RECT_SIZE, 0), other_tetrion)
 
                     clock.tick()
                     fps = int(clock.get_fps())

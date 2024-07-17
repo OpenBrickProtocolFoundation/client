@@ -74,6 +74,13 @@ class Key(Enum):
     HOLD = 6
 
 
+class Rotation(Enum):
+    NORTH = 0
+    EAST = 1
+    SOUTH = 2
+    WEST = 3
+
+
 class EventType(Enum):
     PRESSED = 0
     RELEASED = 1
@@ -104,6 +111,14 @@ class TetrominoType(Enum):
     Z = 7
 
 
+class _ObpfPreviewPieces(ctypes.Structure):
+    _fields_ = [("types", ctypes.c_int * 6)]
+
+
+class _ObpfMinoPositions(ctypes.Structure):
+    _fields_ = [("positions", _ObpfVec2 * 4)]
+
+
 class Tetromino(NamedTuple):
     mino_positions: tuple[Vec2, Vec2, Vec2, Vec2]
     type: TetrominoType
@@ -122,6 +137,10 @@ def _load_library() -> ctypes.CDLL:
 
     lib = ctypes.windll.LoadLibrary(lib_path)
 
+    # ObpfMinoPositions obpf_tetromino_get_mino_positions(ObpfTetrominoType type, ObpfRotation rotation);
+    lib.obpf_tetromino_get_mino_positions.argtypes = [ctypes.c_int, ctypes.c_int]
+    lib.obpf_tetromino_get_mino_positions.restype = _ObpfMinoPositions
+
     # struct Tetrion* obpf_create_tetrion(uint64_t seed);
     lib.obpf_create_tetrion.argtypes = [ctypes.c_uint64]
     lib.obpf_create_tetrion.restype = POINTER(_ObpfTetrion)
@@ -137,6 +156,14 @@ def _load_library() -> ctypes.CDLL:
     # bool obpf_tetrion_try_get_ghost_tetromino(struct Tetrion const* tetrion, struct ObpfTetromino* out_tetromino);
     lib.obpf_tetrion_try_get_ghost_tetromino.argtypes = [POINTER(_ObpfTetrion), POINTER(_ObpfTetromino)]
     lib.obpf_tetrion_try_get_ghost_tetromino.restype = ctypes.c_bool
+
+    # ObpfPreviewPieces obpf_tetrion_get_preview_pieces(struct ObpfTetrion const* tetrion);
+    lib.obpf_tetrion_get_preview_pieces.argtypes = [POINTER(_ObpfTetrion)]
+    lib.obpf_tetrion_get_preview_pieces.restype = _ObpfPreviewPieces
+
+    # ObpfTetrominoType obpf_tetrion_get_hold_piece(struct ObpfTetrion const* tetrion);
+    lib.obpf_tetrion_get_hold_piece.argtypes = [POINTER(_ObpfTetrion)]
+    lib.obpf_tetrion_get_hold_piece.restype = ctypes.c_int
 
     # void obpf_tetrion_simulate_up_until(struct Tetrion* tetrion, uint64_t frame);
     lib.obpf_tetrion_simulate_up_until.argtypes = [POINTER(_ObpfTetrion), ctypes.c_uint64]
@@ -572,6 +599,11 @@ def _lobby_unregister_user(connection: Any, user: Any) -> None:
     _lobby_unregister_user(connection, user)
 
 
+def _tetromino_get_mino_positions(type_: TetrominoType, rotation: Rotation) -> list[Vec2]:
+    obpf_mino_positions = _LIB.obpf_tetromino_get_mino_positions(type_.value, rotation.value)
+    return [Vec2(position.x, position.y) for position in obpf_mino_positions.positions]
+
+
 def _create_tetrion(seed: int) -> Any:
     return _LIB.obpf_create_tetrion(seed)
 
@@ -596,6 +628,15 @@ def _tetrion_try_get_ghost_tetromino(tetrion: Any) -> Optional[Tetromino]:
         return None
     pos0, pos1, pos2, pos3 = [Vec2(position.x, position.y) for position in tetromino.mino_positions]
     return Tetromino((pos0, pos1, pos2, pos3), TetrominoType(tetromino.type_))
+
+
+def _tetrion_get_preview_pieces(tetrion: Any) -> list[TetrominoType]:
+    preview_pieces = _LIB.obpf_tetrion_get_preview_pieces(tetrion)
+    return [TetrominoType(t) for t in preview_pieces.types]
+
+
+def _tetrion_get_hold_piece(tetrion: Any) -> TetrominoType:
+    return TetrominoType(_LIB.obpf_tetrion_get_hold_piece(tetrion))
 
 
 def _tetrion_simulate_up_until(tetrion: Any, frame: int) -> None:
@@ -640,6 +681,12 @@ class Tetrion:
 
     def try_get_ghost_tetromino(self) -> Optional[Tetromino]:
         return _tetrion_try_get_ghost_tetromino(self._tetrion)
+
+    def get_preview_pieces(self) -> list[TetrominoType]:
+        return _tetrion_get_preview_pieces(self._tetrion)
+
+    def get_hold_piece(self) -> TetrominoType:
+        return _tetrion_get_hold_piece(self._tetrion)
 
     def simulate_up_until(self, frame: int) -> None:
         _tetrion_simulate_up_until(self._tetrion, frame)
