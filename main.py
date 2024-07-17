@@ -13,12 +13,15 @@ import pygame
 import select
 
 import controls
+from synchronized import Synchronized
 from tetrion import Event
 from tetrion import EventType
 from tetrion import Key
+from tetrion import Lobby
 from tetrion import LobbyServerConnection
 from tetrion import Tetrion
 from tetrion import Tetromino
+from tetrion import User
 from tetrion import Vec2
 
 
@@ -52,8 +55,6 @@ GHOST_COLORS = [
 ]
 
 RECT_SIZE = 30
-
-done = False
 
 
 def send_event_buffer(target: socket.socket, events: list[Event], frame: int) -> None:
@@ -132,12 +133,14 @@ class GameStartMessage(NamedTuple):
 message_queue: list[BroadcastMessage | GameStartMessage] = []
 
 
-def keep_receiving(server_socket: socket.socket) -> None:
-    global done
+def keep_receiving(server_socket: socket.socket, running: Synchronized[bool]) -> None:
     buffer = bytearray()
     current_header: Optional[MessageHeader] = None
     print("entering main loop in keep_receiving()")
-    while not done:
+    while True:
+        with running.lock() as is_running:
+            if not is_running.get():
+                break
         ready = select.select([server_socket], [], [], 0.5)
         if not ready[0]:
             continue
@@ -192,189 +195,203 @@ def keep_receiving(server_socket: socket.socket) -> None:
 _LOBBY_URL = "http://127.0.0.1:5000"
 
 
+class GameStartResult(NamedTuple):
+    user: User
+    lobby: Lobby
+    gameserver_port: int
+
+
+def login_and_create_or_join_lobby(connection: LobbyServerConnection) -> GameStartResult:
+    with connection.get_lobby_list() as lobby_list:
+        num_lobbies = len(lobby_list.lobbies)
+
+    credentials = ("r00tifant", "sudo") if num_lobbies == 0 else ("coder2k", "secret")
+
+    user = connection.authenticate_user(*credentials)
+
+    if num_lobbies == 0:
+        lobby = connection.create_lobby(user, "coder2k's lobby", 2)
+        # todo: implement function that can retrieve the lobby info of a given lobby
+        while True:
+            with connection.get_lobby_list() as lobby_list:
+                lobby_info = lobby_list.lobbies[0]
+                lobby_details = connection.get_lobby_details(lobby_info, user)
+            if MODE == Mode.TWO_PLAYERS:
+                if len(lobby_details.client_infos) == 0:
+                    logging.debug("second player not present yet...")
+                    time.sleep(1.0)
+                    continue
+            gameserver_port = connection.start_lobby(user, lobby)
+            if gameserver_port is not None:
+                logging.debug("game started")
+                return GameStartResult(user, lobby, gameserver_port)
+            logging.debug("starting the game failed...")
+            time.sleep(1.0)
+    else:
+        assert num_lobbies == 1
+        with connection.get_lobby_list() as lobby_list:
+            lobby_info = lobby_list.lobbies[0]
+            lobby = connection.join(lobby_info, user)
+        logging.debug("joined lobby")
+        gameserver_port = connection.set_ready(lobby, user)
+        logging.debug("game started")
+        return GameStartResult(user, lobby, gameserver_port)
+
+
 def main() -> None:
     with LobbyServerConnection("127.0.0.1", 5000) as connection:
-        with connection.get_lobby_list() as lobby_list:
-            num_lobbies = len(lobby_list.lobbies)
-        with (
-                connection.authenticate_user("r00tifant", "sudo")
-                if num_lobbies == 0
-                else connection.authenticate_user("coder2k", "secret")
-        ) as user:
-            if num_lobbies == 0:
-                lobby = connection.create_lobby(user, "coder2k's lobby", 2)
-                # todo: implement function that can retrieve the lobby info of a given lobby
+        user, lobby, gameserver_port = login_and_create_or_join_lobby(connection)
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as gameserver_socket:
+            print("trying to connect to gameserver...")
+            gameserver_socket.connect(("127.0.0.1", gameserver_port))
+            gameserver_socket.setblocking(False)
+
+            running = Synchronized(True)
+            worker_thread = threading.Thread(target=keep_receiving, args=(gameserver_socket, running))
+            worker_thread.start()
+            print("connected to gameserver")
+
+            while len(message_queue) == 0:
+                time.sleep(0.1)
+
+            game_start_message = message_queue.pop(0)
+            assert isinstance(game_start_message, GameStartMessage)
+
+            client_id = game_start_message.client_id
+            seed = game_start_message.random_seed
+
+            with Tetrion(seed) as tetrion, Tetrion(seed) as other_tetrion:
+                pygame.init()
+                size = (RECT_SIZE * tetrion.width * 2, (RECT_SIZE + 2) * tetrion.height)
+                screen = pygame.display.set_mode(size)
+
+                simulation_step = 0
+
+                clock = pygame.time.Clock()
+
+                event_buffer: list[Event] = []
+
+                other_client_frame: Optional[int] = None
+
+                start_time = time.monotonic()
+
                 while True:
-                    with connection.get_lobby_list() as lobby_list:
-                        lobby_info = lobby_list.lobbies[0]
-                        lobby_details = connection.get_lobby_details(lobby_info, user)
-                    if MODE == Mode.TWO_PLAYERS:
-                        if len(lobby_details.client_infos) == 0:
-                            logging.debug("second player not present yet...")
-                            time.sleep(1.0)
-                            continue
-                    gameserver_port = connection.start_lobby(user, lobby)
-                    if gameserver_port is not None:
-                        logging.debug("game started")
-                        break
-                    logging.debug("starting the game failed...")
-                    time.sleep(1.0)
-            else:
-                assert num_lobbies == 1
-                with connection.get_lobby_list() as lobby_list:
-                    lobby_info = lobby_list.lobbies[0]
-                    lobby = connection.join(lobby_info, user)
-                logging.debug("joined lobby")
-                gameserver_port = connection.set_ready(lobby, user)
-                logging.debug("game started")
+                    with running.lock() as is_running:
+                        if not is_running.get():
+                            break
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            with running.lock() as is_running:
+                                is_running.set(False)
+                        elif event.type == pygame.KEYDOWN:
+                            if event.key == controls.QUIT:
+                                with running.lock() as is_running:
+                                    is_running.set(False)
+                            elif event.key == controls.LEFT:
+                                input_event = Event(key=Key.LEFT, type=EventType.PRESSED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.RIGHT:
+                                input_event = Event(key=Key.RIGHT, type=EventType.PRESSED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.DOWN:
+                                input_event = Event(key=Key.DOWN, type=EventType.PRESSED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
+                                input_event = Event(key=Key.ROTATE_CCW, type=EventType.PRESSED,
+                                                    frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.ROTATE_CLOCKWISE:
+                                input_event = Event(key=Key.ROTATE_CW, type=EventType.PRESSED,
+                                                    frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.DROP:
+                                input_event = Event(key=Key.DROP, type=EventType.PRESSED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                        elif event.type == pygame.KEYUP:
+                            if event.key == controls.LEFT:
+                                input_event = Event(key=Key.LEFT, type=EventType.RELEASED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.RIGHT:
+                                input_event = Event(key=Key.RIGHT, type=EventType.RELEASED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.DOWN:
+                                input_event = Event(key=Key.DOWN, type=EventType.RELEASED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
+                                input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED,
+                                                    frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.ROTATE_CLOCKWISE:
+                                input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED,
+                                                    frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
+                            elif event.key == controls.DROP:
+                                input_event = Event(key=Key.DROP, type=EventType.RELEASED, frame=simulation_step)
+                                tetrion.enqueue_event(input_event)
+                                event_buffer.append(input_event)
 
-            print(f"active lobbies: {connection.get_lobby_list()}")
+                    if simulation_step > 0:
+                        tetrion.simulate_up_until(simulation_step - 1)
 
-            global done
+                    while len(message_queue) > 0:
+                        broadcast_message = message_queue.pop(0)
+                        assert isinstance(broadcast_message, BroadcastMessage)
+                        assert len(broadcast_message.events_per_client) >= 1
+                        other_client_frame = broadcast_message.frame
+                        if MODE == Mode.TWO_PLAYERS:
+                            for input_event in broadcast_message.events_per_client[1 if client_id == 0 else 0].events:
+                                other_tetrion.enqueue_event(input_event)
 
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as gameserver_socket:
-                print("trying to connect to gameserver...")
-                gameserver_socket.connect(("127.0.0.1", gameserver_port))
-                gameserver_socket.setblocking(False)
-                worker_thread = threading.Thread(target=keep_receiving, args=(gameserver_socket,))
-                worker_thread.start()
-                print("connected to gameserver")
+                    if simulation_step > 30 and other_client_frame is not None:
+                        other_tetrion.simulate_up_until(min(simulation_step - 30, other_client_frame))
 
-                while len(message_queue) == 0:
-                    time.sleep(0.1)
+                    screen.fill((100, 100, 100))
 
-                game_start_message = message_queue.pop(0)
-                assert isinstance(game_start_message, GameStartMessage)
+                    render_tetrion(screen, Vec2(0, 0), tetrion)
+                    render_tetrion(screen, Vec2(tetrion.width * RECT_SIZE, 0), other_tetrion)
 
-                client_id = game_start_message.client_id
-                seed = game_start_message.random_seed
+                    clock.tick()
+                    fps = int(clock.get_fps())
 
-                with Tetrion(seed) as tetrion, Tetrion(seed) as other_tetrion:
-                    pygame.init()
-                    size = (RECT_SIZE * tetrion.width * 2, (RECT_SIZE + 2) * tetrion.height)
-                    screen = pygame.display.set_mode(size)
+                    game_font = pygame.font.Font(None, 30)
+                    fps_counter = game_font.render(f"{fps} FPS, simulation step {simulation_step}", True,
+                                                   (255, 255, 255))
 
-                    simulation_step = 0
+                    screen.blit(fps_counter, (5, 5 + tetrion.height * RECT_SIZE))
 
-                    clock = pygame.time.Clock()
+                    pygame.display.flip()
 
-                    event_buffer: list[Event] = []
+                    elapsed = time.monotonic() - start_time
+                    new_frame = int(elapsed / (1.0 / 60.0))
 
-                    other_client_frame: Optional[int] = None
+                    while simulation_step < new_frame - 1:
+                        if simulation_step % 15 == 0:
+                            send_event_buffer(gameserver_socket, event_buffer, simulation_step)
+                            event_buffer.clear()
+                        simulation_step += 1
 
-                    start_time = time.monotonic()
+            print("main loop ended")
 
-                    while not done:
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                done = True
-                            elif event.type == pygame.KEYDOWN:
-                                if event.key == controls.QUIT:
-                                    done = True
-                                elif event.key == controls.LEFT:
-                                    input_event = Event(key=Key.LEFT, type=EventType.PRESSED, frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.RIGHT:
-                                    input_event = Event(key=Key.RIGHT, type=EventType.PRESSED, frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.DOWN:
-                                    input_event = Event(key=Key.DOWN, type=EventType.PRESSED, frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.PRESSED,
-                                                        frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.ROTATE_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.PRESSED,
-                                                        frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.DROP:
-                                    input_event = Event(key=Key.DROP, type=EventType.PRESSED, frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                            elif event.type == pygame.KEYUP:
-                                if event.key == controls.LEFT:
-                                    input_event = Event(key=Key.LEFT, type=EventType.RELEASED, frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.RIGHT:
-                                    input_event = Event(key=Key.RIGHT, type=EventType.RELEASED, frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.DOWN:
-                                    input_event = Event(key=Key.DOWN, type=EventType.RELEASED, frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED,
-                                                        frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.ROTATE_CLOCKWISE:
-                                    input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED,
-                                                        frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
-                                elif event.key == controls.DROP:
-                                    input_event = Event(key=Key.DROP, type=EventType.RELEASED, frame=simulation_step)
-                                    tetrion.enqueue_event(input_event)
-                                    event_buffer.append(input_event)
+            worker_thread.join()
 
-                        if simulation_step > 0:
-                            tetrion.simulate_up_until(simulation_step - 1)
+            gameserver_socket.close()
 
-                        while len(message_queue) > 0:
-                            broadcast_message = message_queue.pop(0)
-                            assert isinstance(broadcast_message, BroadcastMessage)
-                            assert len(broadcast_message.events_per_client) >= 1
-                            other_client_frame = broadcast_message.frame
-                            if MODE == Mode.TWO_PLAYERS:
-                                for input_event in broadcast_message.events_per_client[
-                                    1 if client_id == 0 else 0].events:
-                                    other_tetrion.enqueue_event(input_event)
+            pygame.quit()
 
-                        if simulation_step > 30 and other_client_frame is not None:
-                            other_tetrion.simulate_up_until(min(simulation_step - 30, other_client_frame))
-
-                        screen.fill((100, 100, 100))
-
-                        render_tetrion(screen, Vec2(0, 0), tetrion)
-                        render_tetrion(screen, Vec2(tetrion.width * RECT_SIZE, 0), other_tetrion)
-
-                        clock.tick()
-                        fps = int(clock.get_fps())
-
-                        game_font = pygame.font.Font(None, 30)
-                        fps_counter = game_font.render(f"{fps} FPS, simulation step {simulation_step}", True,
-                                                       (255, 255, 255))
-
-                        screen.blit(fps_counter, (5, 5 + tetrion.height * RECT_SIZE))
-
-                        pygame.display.flip()
-
-                        elapsed = time.monotonic() - start_time
-                        new_frame = int(elapsed / (1.0 / 60.0))
-
-                        while simulation_step < new_frame - 1:
-                            if simulation_step % 15 == 0:
-                                send_event_buffer(gameserver_socket, event_buffer, simulation_step)
-                                event_buffer.clear()
-                            simulation_step += 1
-
-                print("main loop ended")
-
-                worker_thread.join()
-
-                gameserver_socket.close()
-
-                pygame.quit()
-
-            connection.destroy_lobby(user, lobby)
+        connection.destroy_lobby(user, lobby)
+        user.destroy()
 
 
 if __name__ == "__main__":

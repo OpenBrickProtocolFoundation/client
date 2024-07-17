@@ -690,6 +690,10 @@ class User:
         assert self._handle is not None
         return self._handle
 
+    def destroy(self) -> None:
+        _user_destroy(self._handle)
+        self._handle = None
+
     def __enter__(self) -> Self:
         return self
 
@@ -698,8 +702,7 @@ class User:
         return exc_type is None
 
     def __del__(self) -> None:
-        _user_destroy(self._handle)
-        self._handle = None
+        self.destroy()
 
 
 @final
