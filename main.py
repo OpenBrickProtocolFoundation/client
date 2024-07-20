@@ -16,7 +16,6 @@ import controls
 from synchronized import Synchronized
 from tetrion import _tetromino_get_mino_positions
 from tetrion import Event
-from tetrion import EventType
 from tetrion import Key
 from tetrion import Lobby
 from tetrion import LobbyServerConnection
@@ -60,13 +59,14 @@ GHOST_COLORS = [
 RECT_SIZE = 30
 
 
-def send_event_buffer(target: socket.socket, events: list[Event], frame: int) -> None:
-    # print(f"sending event buffer: {frame=}, {events=}")
-    payload_size = 9 + 10 * len(events)
-    data = struct.pack("!BHQB", 0, payload_size, frame, len(events))
-    for event in events:
-        data += struct.pack("!BBQ", event.key.value, event.type.value, event.frame)
-    target.send(data)
+def send_heartbeat_message(target: socket.socket, frame: int, key_states_buffer: list[set[Key]]) -> None:
+    print(f"frame = {frame}")
+    assert len(key_states_buffer) == 15
+    payload_size = 8 + len(key_states_buffer)
+    buffer = struct.pack("!BHQ", MessageType.HEARTBEAT.value, payload_size, frame)
+    for key_states in key_states_buffer:
+        buffer += struct.pack("!B", sum(1 << key.value for key in key_states))
+    target.send(buffer)
 
 
 def render_tetrion(
@@ -194,7 +194,7 @@ class MessageType(Enum):
     HEARTBEAT = 0
     GRID_STATE = 1
     GAME_START = 2
-    EVENT_BROADCAST = 3
+    STATE_BROADCAST = 3
 
 
 class MessageHeader(NamedTuple):
@@ -209,13 +209,42 @@ class ClientEvents(NamedTuple):
 
 class BroadcastMessage(NamedTuple):
     frame: int
-    events_per_client: list[ClientEvents]
+    states_per_client: dict[int, list[set[Key]]]
 
 
 class GameStartMessage(NamedTuple):
     client_id: int
     start_frame: int
     random_seed: int
+
+
+pressed_keys: set[Key] = set()
+
+
+def simulation_worker(
+        target: socket.socket,
+        start_time: float,
+        running: Synchronized[bool],
+        tetrion: Tetrion,
+) -> None:
+    print("entering main loop in keep_sending_heartbeats()")
+    buffer: list[set[Key]] = []
+    frame = 0
+    while True:
+        with running.lock() as is_running:
+            if not is_running.get():
+                break
+        elapsed = time.monotonic() - start_time
+        current_frame = int(elapsed / (1.0 / 60.0))
+        while frame < current_frame:
+            tetrion.simulate_next_frame(pressed_keys)
+            buffer.append(pressed_keys.copy())
+            if len(buffer) == 15:
+                send_heartbeat_message(target, frame, buffer)
+                buffer.clear()
+            frame += 1
+        time.sleep(1.0 / 180.0)
+    print("main loop ended in keep_sending_heartbeats()")
 
 
 message_queue: list[BroadcastMessage | GameStartMessage] = []
@@ -256,22 +285,23 @@ def keep_receiving(server_socket: socket.socket, running: Synchronized[bool]) ->
                     client_id, start_frame, random_seed = struct.unpack("!BQQ", buffer[:17])
                     buffer = buffer[17:]
                     game_start_message = GameStartMessage(client_id, start_frame, random_seed)
-                    # print(game_start_message)
                     message_queue.append(game_start_message)
-                case MessageType.EVENT_BROADCAST:
+                case MessageType.STATE_BROADCAST:
                     message_frame, num_clients = struct.unpack("!QB", buffer[:9])
                     buffer = buffer[9:]
-                    events_per_client: list[ClientEvents] = []
+                    states_per_client: dict[int, list[set[Key]]] = dict()
                     for _ in range(num_clients):
-                        client_id, event_count = struct.unpack("!BB", buffer[:2])
-                        buffer = buffer[2:]
-                        events: list[Event] = []
-                        for _ in range(event_count):
-                            key, event_type, event_frame = struct.unpack("!BBQ", buffer[:10])
-                            buffer = buffer[10:]
-                            events.append(Event(Key(key), EventType(event_type), event_frame))
-                        events_per_client.append(ClientEvents(client_id, events))
-                    broadcast_message = BroadcastMessage(message_frame, events_per_client)
+                        client_id, = struct.unpack("!B", buffer[:1])
+                        buffer = buffer[1:]
+                        states: list[set[Key]] = list()
+                        for _ in range(15):
+                            state, = struct.unpack("!B", buffer[:1])
+                            buffer = buffer[1:]
+                            states.append(set(key for key in Key if state & (1 << key.value) != 0))
+                        assert len(states) == 15
+                        assert client_id not in states_per_client
+                        states_per_client[client_id] = states
+                    broadcast_message = BroadcastMessage(message_frame, states_per_client)
                     message_queue.append(broadcast_message)
                 case _:
                     raise Exception(f"invalid message type: {current_header.type_.name}")
@@ -358,16 +388,21 @@ def main() -> None:
 
                 clock = pygame.time.Clock()
 
-                event_buffer: list[Event] = []
-
-                other_client_frame: Optional[int] = None
-
                 start_time = time.monotonic()
+
+                heartbeat_thread = threading.Thread(
+                    target=simulation_worker,
+                    args=(gameserver_socket, start_time, running, tetrion),
+                )
+                heartbeat_thread.start()
+
+                other_tetrion_key_states_buffer: list[set[Key]] = []
 
                 while True:
                     with running.lock() as is_running:
                         if not is_running.get():
                             break
+
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             with running.lock() as is_running:
@@ -377,81 +412,53 @@ def main() -> None:
                                 with running.lock() as is_running:
                                     is_running.set(False)
                             elif event.key == controls.LEFT:
-                                input_event = Event(key=Key.LEFT, type=EventType.PRESSED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.add(Key.LEFT)
                             elif event.key == controls.RIGHT:
-                                input_event = Event(key=Key.RIGHT, type=EventType.PRESSED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.add(Key.RIGHT)
                             elif event.key == controls.DOWN:
-                                input_event = Event(key=Key.DOWN, type=EventType.PRESSED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.add(Key.DOWN)
                             elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
-                                input_event = Event(key=Key.ROTATE_CCW, type=EventType.PRESSED,
-                                                    frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.add(Key.ROTATE_CCW)
                             elif event.key == controls.ROTATE_CLOCKWISE:
-                                input_event = Event(key=Key.ROTATE_CW, type=EventType.PRESSED,
-                                                    frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.add(Key.ROTATE_CW)
                             elif event.key == controls.DROP:
-                                input_event = Event(key=Key.DROP, type=EventType.PRESSED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.add(Key.DROP)
                             elif event.key == controls.HOLD:
-                                input_event = Event(key=Key.HOLD, type=EventType.PRESSED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.add(Key.HOLD)
                         elif event.type == pygame.KEYUP:
                             if event.key == controls.LEFT:
-                                input_event = Event(key=Key.LEFT, type=EventType.RELEASED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.remove(Key.LEFT)
                             elif event.key == controls.RIGHT:
-                                input_event = Event(key=Key.RIGHT, type=EventType.RELEASED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.remove(Key.RIGHT)
                             elif event.key == controls.DOWN:
-                                input_event = Event(key=Key.DOWN, type=EventType.RELEASED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.remove(Key.DOWN)
                             elif event.key == controls.ROTATE_COUNTER_CLOCKWISE:
-                                input_event = Event(key=Key.ROTATE_CCW, type=EventType.RELEASED,
-                                                    frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.remove(Key.ROTATE_CCW)
                             elif event.key == controls.ROTATE_CLOCKWISE:
-                                input_event = Event(key=Key.ROTATE_CW, type=EventType.RELEASED,
-                                                    frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.remove(Key.ROTATE_CW)
                             elif event.key == controls.DROP:
-                                input_event = Event(key=Key.DROP, type=EventType.RELEASED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
+                                pressed_keys.remove(Key.DROP)
                             elif event.key == controls.HOLD:
-                                input_event = Event(key=Key.HOLD, type=EventType.RELEASED, frame=simulation_step)
-                                tetrion.enqueue_event(input_event)
-                                event_buffer.append(input_event)
-
-                    if simulation_step > 0:
-                        tetrion.simulate_up_until(simulation_step - 1)
+                                pressed_keys.remove(Key.HOLD)
 
                     while len(message_queue) > 0:
                         broadcast_message = message_queue.pop(0)
                         assert isinstance(broadcast_message, BroadcastMessage)
-                        assert len(broadcast_message.events_per_client) >= 1
-                        other_client_frame = broadcast_message.frame
+                        assert len(broadcast_message.states_per_client) >= 1
                         if MODE == Mode.TWO_PLAYERS:
-                            for input_event in broadcast_message.events_per_client[1 if client_id == 0 else 0].events:
-                                other_tetrion.enqueue_event(input_event)
+                            other_client_id = 1 if client_id == 0 else 0
+                        else:
+                            other_client_id = 0
+                        if other_client_id in broadcast_message.states_per_client:
+                            for state in broadcast_message.states_per_client[other_client_id]:
+                                other_tetrion_key_states_buffer.append(state)
 
-                    if simulation_step > 30 and other_client_frame is not None:
-                        other_tetrion.simulate_up_until(min(simulation_step - 30, other_client_frame))
+                    max_other_tetrion_frame = tetrion.get_next_frame() - 60
+                    while (
+                            len(other_tetrion_key_states_buffer) > 0
+                            and other_tetrion.get_next_frame() <= max_other_tetrion_frame
+                    ):
+                        other_tetrion.simulate_next_frame(other_tetrion_key_states_buffer.pop(0))
 
                     screen.fill((0, 0, 0))
 
@@ -462,8 +469,11 @@ def main() -> None:
                     fps = int(clock.get_fps())
 
                     game_font = pygame.font.Font(None, 30)
-                    fps_counter = game_font.render(f"{fps} FPS, simulation step {simulation_step}", True,
-                                                   (255, 255, 255))
+                    fps_counter = game_font.render(
+                        f"{fps} FPS, simulation step {simulation_step}, {tetrion.get_next_frame() =}, "
+                        + f"{other_tetrion.get_next_frame() =}, delta = {tetrion.get_next_frame() - other_tetrion.get_next_frame()}",
+                        True,
+                        (255, 255, 255))
 
                     screen.blit(fps_counter, (5, 5 + tetrion.height * RECT_SIZE))
 
@@ -473,13 +483,11 @@ def main() -> None:
                     new_frame = int(elapsed / (1.0 / 60.0))
 
                     while simulation_step < new_frame - 1:
-                        if simulation_step % 15 == 0:
-                            send_event_buffer(gameserver_socket, event_buffer, simulation_step)
-                            event_buffer.clear()
                         simulation_step += 1
 
             print("main loop ended")
 
+            heartbeat_thread.join()
             worker_thread.join()
 
             gameserver_socket.close()

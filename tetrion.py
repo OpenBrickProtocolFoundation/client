@@ -22,6 +22,13 @@ from line_clear_delay_state import LineClearDelayState
 from line_clear_delay_state import ObpfLineClearDelayState
 
 
+# typedef struct {
+#         uint8_t bitmask;
+#     } ObpfKeyState;
+class _ObpfKeyState(ctypes.Structure):
+    _fields_ = [("bitmask", ctypes.c_uint8)]
+
+
 class _ObpfMatrix(ctypes.Structure):
     pass
 
@@ -137,6 +144,19 @@ def _load_library() -> ctypes.CDLL:
 
     lib = ctypes.windll.LoadLibrary(lib_path)
 
+    # ObpfKeyState obpf_key_state_create(
+    #         bool left,
+    #         bool right,
+    #         bool down,
+    #         bool drop,
+    #         bool rotate_clockwise,
+    #         bool rotate_counter_clockwise,
+    #         bool hold
+    #     );
+    lib.obpf_key_state_create.argtypes = [ctypes.c_bool, ctypes.c_bool, ctypes.c_bool, ctypes.c_bool, ctypes.c_bool,
+                                          ctypes.c_bool, ctypes.c_bool]
+    lib.obpf_key_state_create.restype = _ObpfKeyState
+
     # ObpfMinoPositions obpf_tetromino_get_mino_positions(ObpfTetrominoType type, ObpfRotation rotation);
     lib.obpf_tetromino_get_mino_positions.argtypes = [ctypes.c_int, ctypes.c_int]
     lib.obpf_tetromino_get_mino_positions.restype = _ObpfMinoPositions
@@ -165,11 +185,12 @@ def _load_library() -> ctypes.CDLL:
     lib.obpf_tetrion_get_hold_piece.argtypes = [POINTER(_ObpfTetrion)]
     lib.obpf_tetrion_get_hold_piece.restype = ctypes.c_int
 
-    # void obpf_tetrion_simulate_up_until(struct Tetrion* tetrion, uint64_t frame);
-    lib.obpf_tetrion_simulate_up_until.argtypes = [POINTER(_ObpfTetrion), ctypes.c_uint64]
+    # uint64_t obpf_tetrion_get_next_frame(struct ObpfTetrion const* tetrion);
+    lib.obpf_tetrion_get_next_frame.argtypes = [POINTER(_ObpfTetrion)]
+    lib.obpf_tetrion_get_next_frame.restype = ctypes.c_uint64
 
-    # void obpf_tetrion_enqueue_event(struct Tetrion* tetrion, ObpfEvent event);
-    lib.obpf_tetrion_enqueue_event.argtypes = [POINTER(_ObpfTetrion), _ObpfEvent]
+    # void obpf_tetrion_simulate_next_frame(struct ObpfTetrion* tetrion, ObpfKeyState key_state);
+    lib.obpf_tetrion_simulate_next_frame.argtypes = [POINTER(_ObpfTetrion), _ObpfKeyState]
 
     # void obpf_destroy_tetrion(struct Tetrion const* tetrion);
     lib.obpf_destroy_tetrion.argtypes = [POINTER(_ObpfTetrion)]
@@ -639,13 +660,12 @@ def _tetrion_get_hold_piece(tetrion: Any) -> TetrominoType:
     return TetrominoType(_LIB.obpf_tetrion_get_hold_piece(tetrion))
 
 
-def _tetrion_simulate_up_until(tetrion: Any, frame: int) -> None:
-    _LIB.obpf_tetrion_simulate_up_until(tetrion, ctypes.c_uint64(frame))
+def _tetrion_get_next_frame(tetrion: Any) -> int:
+    return int(_LIB.obpf_tetrion_get_next_frame(tetrion))
 
 
-def _tetrion_enqueue_event(tetrion: Any, event: Event) -> None:
-    obpf_event = _ObpfEvent(key=event.key.value, type=event.type.value, frame=ctypes.c_uint64(event.frame))
-    _LIB.obpf_tetrion_enqueue_event(tetrion, obpf_event)
+def _tetrion_simulate_next_frame(tetrion: Any, key_state: _ObpfKeyState) -> None:
+    _LIB.obpf_tetrion_simulate_next_frame(tetrion, key_state)
 
 
 def _destroy_tetrion(tetrion: Any) -> None:
@@ -688,11 +708,22 @@ class Tetrion:
     def get_hold_piece(self) -> TetrominoType:
         return _tetrion_get_hold_piece(self._tetrion)
 
-    def simulate_up_until(self, frame: int) -> None:
-        _tetrion_simulate_up_until(self._tetrion, frame)
+    def get_next_frame(self) -> int:
+        return _tetrion_get_next_frame(self._tetrion)
 
-    def enqueue_event(self, event: Event) -> None:
-        _tetrion_enqueue_event(self._tetrion, event)
+    def simulate_next_frame(self, pressed_keys: set[Key]) -> None:
+        print(f"pressed keys: {", ".join(key.name for key in pressed_keys)}")
+        key_state = _LIB.obpf_key_state_create(
+            Key.LEFT in pressed_keys,
+            Key.RIGHT in pressed_keys,
+            Key.DOWN in pressed_keys,
+            Key.DROP in pressed_keys,
+            Key.ROTATE_CW in pressed_keys,
+            Key.ROTATE_CCW in pressed_keys,
+            Key.HOLD in pressed_keys
+        )
+        print(f"bitmask as binary: {key_state.bitmask:b}")
+        _tetrion_simulate_next_frame(self._tetrion, key_state)
 
     def matrix(self) -> Matrix:
         matrix = _tetrion_matrix(self._tetrion)
